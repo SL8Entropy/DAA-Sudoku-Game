@@ -19,8 +19,10 @@ class SudokuDuel:
         self.current_turn = "user"
         self.cells = [[None]*9 for _ in range(9)]
         self.pq = []
+        self.pq_entries = set()  # FIX: Track entries to avoid duplicates
         self.difficulty = "Medium"
         self.difficulty_var = tk.StringVar(value=self.difficulty)
+        self.game_over = False  # FIX: Flag to prevent actions after game ends
 
         
         # Create GUI
@@ -162,49 +164,58 @@ class SudokuDuel:
     #  DIVIDE AND CONQUER SOLVER
     # -------------------------------------------------------------------------
     
+    # FIX: Split into two methods to avoid mutating input
     def solve_dnc(self, board_snapshot):
+        # Create a working copy to avoid mutating the input
+        board = copy.deepcopy(board_snapshot)
+        return self._solve_dnc_helper(board)
+    
+    def _solve_dnc_helper(self, board):
         # 1. PIVOT (Find MRV)
         best_cell = None
+        best_candidates = None
         min_candidates_count = 10 
         
         for r in range(9):
             for c in range(9):
-                if board_snapshot[r][c] == 0:
-                    candidates = self.get_candidates(board_snapshot, r, c)
+                if board[r][c] == 0:
+                    candidates = self.get_candidates(board, r, c)
                     count = len(candidates)
                     if count == 0: return None # Dead end
                     
                     if count < min_candidates_count:
                         min_candidates_count = count
                         best_cell = (r, c)
+                        best_candidates = candidates  # FIX: Store candidates to avoid recalculating
                         if count == 1: break 
             if min_candidates_count == 1: break
 
         # 2. BASE CASE
         if best_cell is None:
-            return board_snapshot
+            return board
 
         # 3. DIVIDE & CONQUER
         row, col = best_cell
-        possible_values = self.get_candidates(board_snapshot, row, col)
         
-        for val in possible_values:
-            board_snapshot[row][col] = val 
-            result = self.solve_dnc(board_snapshot)
+        for val in best_candidates:
+            board[row][col] = val 
+            result = self._solve_dnc_helper(board)
             if result is not None:
                 return result
-            board_snapshot[row][col] = 0 # Backtrack
+            board[row][col] = 0 # Backtrack
             
         return None
 
     def initialize_priority_queue(self):
         self.pq = []
+        self.pq_entries = set()  # FIX: Reset tracking set
         for i in range(9):
             for j in range(9):
                 if self.board[i][j] == 0:
                     c = self.get_candidates(self.board, i, j)
                     if c:
                         heapq.heappush(self.pq, (len(c), i, j))
+                        self.pq_entries.add((i, j))  # FIX: Track entry
 
     def update_neighbors(self, row, col):
         neighbours = set()
@@ -220,12 +231,16 @@ class SudokuDuel:
             if self.board[r][c] == 0:
                 cand = self.get_candidates(self.board, r, c)
                 if cand:
-                    heapq.heappush(self.pq, (len(cand), r, c))
+                    # FIX: Only add if not already in queue (avoid duplicates)
+                    if (r, c) not in self.pq_entries:
+                        heapq.heappush(self.pq, (len(cand), r, c))
+                        self.pq_entries.add((r, c))
 
     def ai_make_move(self):
         # Sync PQ just in case
         while self.pq and self.board[self.pq[0][1]][self.pq[0][2]] != 0:
-            heapq.heappop(self.pq)
+            _, r, c = heapq.heappop(self.pq)
+            self.pq_entries.discard((r, c))  # FIX: Remove from tracking
             
         if not self.pq:
             # Try to rebuild if empty but board not full (safety net)
@@ -237,10 +252,10 @@ class SudokuDuel:
 
         # Get Target
         _, row, col = heapq.heappop(self.pq)
+        self.pq_entries.discard((row, col))  # FIX: Remove from tracking
         
         # Run D&C Solver
-        board_copy = copy.deepcopy(self.board)
-        solved_board = self.solve_dnc(board_copy)
+        solved_board = self.solve_dnc(self.board)
         
         if solved_board:
             correct_val = solved_board[row][col]
@@ -258,7 +273,8 @@ class SudokuDuel:
             return False
 
     def on_cell_edit(self, row, col):
-        if self.current_turn != "user" or self.initial_board[row][col] != 0:
+        # FIX: Check game_over flag
+        if self.game_over or self.current_turn != "user" or self.initial_board[row][col] != 0:
             return
         cell = self.cells[row][col]
         v = cell.get().strip()
@@ -279,11 +295,13 @@ class SudokuDuel:
 
             if self.is_valid(self.board, row, col, num):
                 self.board[row][col] = num
+                self.pq_entries.discard((row, col))  # FIX: Remove from tracking
                 self.update_neighbors(row, col)
                 cell.config(fg="blue")
                 
                 # CHECK WIN IMMEDIATELY (Fix #1)
                 if self.is_complete():
+                    self.game_over = True  # FIX: Set game over
                     messagebox.showinfo("Game Over", "Puzzle Complete! You Win!")
                     return
 
@@ -297,15 +315,20 @@ class SudokuDuel:
             cell.delete(0, tk.END)
 
     def ai_play_button(self):
+        if self.game_over:  # FIX: Check game_over
+            return
         self.status_label.config(text="AI is Thinking...")
         self.root.update() 
         self.ai_turn()
 
     def ai_turn(self):
+        if self.game_over:  # FIX: Check game_over
+            return
         # Try to make a move
         if not self.ai_make_move():
             # If move failed, check if it's because board is full or error
             if self.is_complete():
+                self.game_over = True  # FIX: Set game over
                 messagebox.showinfo("Game Over", "Puzzle Complete!")
             else:
                 messagebox.showinfo("Game Over", "AI cannot find a solution (Unsolvable state).")   
@@ -314,6 +337,7 @@ class SudokuDuel:
             
         # Check for win immediately after AI move
         if self.is_complete():
+            self.game_over = True  # FIX: Set game over
             messagebox.showinfo("Game Over", "Puzzle Complete! AI Finished it.")
             return
             
@@ -324,6 +348,7 @@ class SudokuDuel:
         return all(self.board[i][j] != 0 for i in range(9) for j in range(9))
 
     def new_game(self):
+        self.game_over = False  # FIX: Reset game over flag
         self.board = self.generate_puzzle()
         self.initial_board = copy.deepcopy(self.board)
         self.current_turn = "user"
@@ -347,6 +372,8 @@ class SudokuDuel:
                     cell.config(bg="white")
 
     def show_hint(self):
+        if self.game_over:  # FIX: Check game_over
+            return
         self.initialize_priority_queue()
 
         while self.pq and self.board[self.pq[0][1]][self.pq[0][2]] != 0:
@@ -377,6 +404,7 @@ class SudokuDuel:
 
 
     def reset_board(self):
+        self.game_over = False  # FIX: Reset game over flag
         self.board = copy.deepcopy(self.initial_board)
         self.current_turn = "user"
         self.initialize_priority_queue()
