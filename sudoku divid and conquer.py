@@ -318,7 +318,7 @@ class SudokuDuel:
         if self.game_over:  # FIX: Check game_over
             return
         self.status_label.config(text="AI is Thinking...")
-        self.root.update() 
+        self.root.update_idletasks()  # Safer than update() - prevents reentrancy
         self.ai_turn()
 
     def ai_turn(self):
