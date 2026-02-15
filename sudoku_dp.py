@@ -337,9 +337,35 @@ class SudokuDuel:
             cell.delete(0, tk.END)
 
     def is_complete(self):
-        return all(self.board[i][j] != 0
-                   for i in range(9)
-                   for j in range(9))
+        """Check if the board is fully filled AND is a valid Sudoku solution."""
+        # Check all cells are filled
+        for i in range(9):
+            for j in range(9):
+                if self.board[i][j] == 0:
+                    return False
+
+        # Validate rows
+        for i in range(9):
+            if len(set(self.board[i])) != 9:
+                return False
+
+        # Validate columns
+        for j in range(9):
+            col = {self.board[i][j] for i in range(9)}
+            if len(col) != 9:
+                return False
+
+        # Validate 3x3 boxes
+        for br in range(0, 9, 3):
+            for bc in range(0, 9, 3):
+                box = set()
+                for i in range(br, br + 3):
+                    for j in range(bc, bc + 3):
+                        box.add(self.board[i][j])
+                if len(box) != 9:
+                    return False
+
+        return True
 
     # --------------------------------------------------
 
