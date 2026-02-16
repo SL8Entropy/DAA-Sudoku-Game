@@ -5,8 +5,8 @@ import random
 import copy
 
 """
-TODO
-1. Implement the MRV heuristics
+
+TODO:
 2. Implement the solution where the AI finds incremental solution rather than filling empty cells from comparing the solution
 3. There is no guarantee for uniqueness
 """
@@ -190,7 +190,42 @@ class SudokuDuel:
         return candidates
 
     # --------------------------------------------------
-    # DP SOLVER (Memoized)
+    # MRV (Minimum Remaining Values) Heuristic
+    # --------------------------------------------------
+
+    def _find_mrv_cell(self, board):
+        """Find the empty cell with the fewest valid candidates (MRV).
+
+        Returns (row, col, candidates) for the most constrained cell,
+        or None if no empty cells remain.
+        If any empty cell has 0 candidates, returns it immediately
+        (signals an unsolvable state for early pruning).
+        """
+        best_cell = None
+        best_count = 10  # larger than any possible candidate count
+
+        for r in range(9):
+            for c in range(9):
+                if board[r][c] == 0:
+                    cands = self.get_candidates(board, r, c)
+                    num_cands = len(cands)
+
+                    # Immediate failure: empty cell with no options
+                    if num_cands == 0:
+                        return (r, c, cands)
+
+                    if num_cands < best_count:
+                        best_count = num_cands
+                        best_cell = (r, c, cands)
+
+                        # Can't do better than 1 candidate
+                        if best_count == 1:
+                            return best_cell
+
+        return best_cell
+
+    # --------------------------------------------------
+    # DP SOLVER (Memoized + MRV)
     # --------------------------------------------------
 
     def solve_dp(self, board_snapshot):
@@ -204,23 +239,22 @@ class SudokuDuel:
         if state in self.dp_cache:
             return self.dp_cache[state]
 
-        # Find first empty cell
-        empty = None
-        for r in range(9):
-            for c in range(9):
-                if board[r][c] == 0:
-                    empty = (r, c)
-                    break
-            if empty:
-                break
+        # Use MRV heuristic to pick the most constrained empty cell
+        mrv = self._find_mrv_cell(board)
 
-        if not empty:
+        # No empty cells — puzzle is solved
+        if mrv is None:
             self.dp_cache[state] = board
             return board
 
-        row, col = empty
+        row, col, candidates = mrv
 
-        for num in self.get_candidates(board, row, col):
+        # If the MRV cell has 0 candidates, this path is unsolvable
+        if not candidates:
+            self.dp_cache[state] = None
+            return None
+
+        for num in candidates:
             board[row][col] = num
 
             result = self._solve_dp_helper(board)
@@ -303,9 +337,35 @@ class SudokuDuel:
             cell.delete(0, tk.END)
 
     def is_complete(self):
-        return all(self.board[i][j] != 0
-                   for i in range(9)
-                   for j in range(9))
+        """Check if the board is fully filled AND is a valid Sudoku solution."""
+        # Check all cells are filled
+        for i in range(9):
+            for j in range(9):
+                if self.board[i][j] == 0:
+                    return False
+
+        # Validate rows
+        for i in range(9):
+            if len(set(self.board[i])) != 9:
+                return False
+
+        # Validate columns
+        for j in range(9):
+            col = {self.board[i][j] for i in range(9)}
+            if len(col) != 9:
+                return False
+
+        # Validate 3x3 boxes
+        for br in range(0, 9, 3):
+            for bc in range(0, 9, 3):
+                box = set()
+                for i in range(br, br + 3):
+                    for j in range(bc, bc + 3):
+                        box.add(self.board[i][j])
+                if len(box) != 9:
+                    return False
+
+        return True
 
     # --------------------------------------------------
 
